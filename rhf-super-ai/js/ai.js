@@ -33,7 +33,7 @@ function buildSystem(s, o) {
   if (s.system) parts.push(s.system);
   parts.push("Hari ini: " + today() + ". Pengetahuanmu punya batas waktu dan bisa usang soal teknologi, versi, harga, berita, dan penemuan baru. Jangan menebak hal seperti itu; kalau tidak ada hasil pencarian web, katakan perlu dicek.");
   if (o.memory) parts.push(o.memory);
-  if (o.web) parts.push("Pakai pencarian web untuk info terbaru dan sebut sumbernya singkat.");
+  if (o.web) parts.push("Kamu punya tool browser_search. Pakai untuk pertanyaan tentang hal terbaru, berita, harga, versi, teknologi, dan penemuan, lalu sebut sumbernya singkat. Untuk sapaan atau pertanyaan umum, jawab langsung tanpa mencari.");
   if (o.localImage) parts.push("Kamu tidak melihat gambar langsung. Kamu menerima hasil OCR dan analisis warna serta pola yang dibaca di perangkat. Jangan mengarang objek yang tidak ada di data; jujur kalau hanya bisa menebak.");
   if (o.images?.length) parts.push("Untuk gambar: salin teks persis apa adanya, jelaskan pola dan detail dengan teliti, katakan jika ada bagian yang tidak jelas.");
   return parts.join("\n\n");
@@ -65,15 +65,19 @@ function askGroq(s, history, o) {
     } else msgs.push({ role: m.role, content: m.content });
   });
   const body = { model: imgs.length ? s.groqVisionModel : web ? webModel(s) : s.groqModel, messages: msgs };
-  if (web) { body.tools = [{ type: "browser_search" }]; body.tool_choice = "required"; }
+  if (web) { body.tools = [{ type: "browser_search" }]; body.tool_choice = o.webForce ? "required" : "auto"; }
   else body.temperature = 0.7;
   return withKeys(s.groqKeys, s.groqKeyId, s.rotate, "Groq", async (key) => {
-    const r = await fetch(GROQ + "/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify(body)
-    });
-    const j = await r.json().catch(() => ({}));
+    const call = async (b) => {
+      const res = await fetch(GROQ + "/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+        body: JSON.stringify(b)
+      });
+      return { r: res, j: await res.json().catch(() => ({})) };
+    };
+    let { r, j } = await call(body);
+    if (!r.ok && r.status === 400 && /did not call a tool/i.test(j?.error?.message || "")) ({ r, j } = await call({ ...body, tool_choice: "auto" }));
     if (!r.ok) throw mkErr("Groq", r, j);
     const msg = j.choices?.[0]?.message || {};
     const found = [
@@ -99,12 +103,12 @@ export async function askAI(history, o = {}) {
     const seen = await askGroq(s, history, { images: imgs, memory: o.memory });
     const ask = last.content || "Jelaskan gambar ini dan cek info terbarunya.";
     const next = [...history.slice(0, -1), { role: "user", content: `Hasil membaca gambar:\n${seen.text}\n\nPermintaan user: ${ask}` }];
-    return askGroq(s, next, { web: true, memory: o.memory });
+    return askGroq(s, next, { web: true, webForce: o.webForce, memory: o.memory });
   }
   const info = await describeImage(imgs[0], last.content);
   const ask = last.content || "Jelaskan gambar ini.";
   const next = [...history.slice(0, -1), { role: "user", content: `Hasil analisis gambar (dibaca di perangkat, bukan penglihatan langsung):\n${info}\n\nPermintaan user: ${ask}` }];
-  return askGroq(s, next, { web: o.web, memory: o.memory, localImage: true });
+  return askGroq(s, next, { web: o.web, webForce: o.webForce, memory: o.memory, localImage: true });
 }
 
 export async function testProvider() {

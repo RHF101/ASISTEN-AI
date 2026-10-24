@@ -304,7 +304,7 @@ async function send() {
     }
     const web = !!st.web || (st.autoWeb !== false && needsWeb(text));
     if (images.length && !canSeeImages()) toast("Membaca gambar di perangkat, tunggu sebentar");
-    const res = await withTimeout(askAI(hist.slice(-24), { images, web, memory: memoryBlock(memories) }), 90000, "AI tidak merespon (90 detik)");
+    const res = await withTimeout(askAI(hist.slice(-24), { images, web, webForce: needsWeb(text), memory: memoryBlock(memories) }), 90000, "AI tidak merespon (90 detik)");
     const reply = res.text, sources = res.sources || [];
 
     const aref = doc(msgsCol);
