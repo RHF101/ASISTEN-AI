@@ -91,3 +91,25 @@ pre code{background:none;padding:0}
 .box h2{margin:0;font-size:16px}label{font-size:13px;color:var(--mut);display:grid;gap:4px}
 .line{display:flex;gap:8px}.line>*{flex:1}.line button{flex:0 0 auto}
 .res{font-size:13px;min-height:18px;word-break:break-word}.res.ok{color:var(--ok)}.res.err{color:var(--err)}
+
+.ic.sm{width:32px;height:32px;font-size:15px;opacity:.55}
+.ic.on{opacity:1;background:var(--panel2);border-color:var(--ac)}
+#vmodes{display:none;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+.chip{padding:5px 11px;border-radius:999px;background:transparent;border:1px solid var(--line);color:var(--tx);font-size:12px;font-weight:500}
+.chip:hover{background:var(--panel2)}
+.src{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.src a{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--mut);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#memBox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;align-items:center;justify-content:center;padding:16px}
+#memBox.open{display:flex}
+.memp{width:min(480px,100%);max-height:80vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px;display:grid;gap:10px}
+.memh{display:flex;align-items:center;gap:10px}.memh b{flex:1}.memh span{color:var(--mut);font-size:13px}
+.mem{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:12px;background:var(--panel2);font-size:14px}
+.mem span{flex:1;word-break:break-word}.mem i{font-style:normal;cursor:pointer;opacity:.5}.mem i:hover{opacity:1;color:var(--err)}
+.memadd{display:flex;gap:8px}.memadd button{white-space:nowrap}
+.muted{color:var(--mut);margin:0;font-size:14px}
+
+span[data-i]{display:inline-flex;vertical-align:middle}
+.ic svg,.icb svg,.sendbtn svg{display:block}
+#prev b{display:grid;place-items:center;line-height:0}
+.item i,.mem i{display:flex;align-items:center}
+.mi b{display:flex;align-items:center}

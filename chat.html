@@ -9,39 +9,52 @@
   <aside class="side" id="side">
     <div class="top"><button id="newChat" class="ghost" type="button">+ Chat baru</button></div>
     <div class="list" id="list"></div>
-    <div class="bot"><b id="who">…</b><a href="settings.html">Pengaturan</a><a href="#" id="out">Keluar</a></div>
+    <div class="bot"><b id="who">…</b><a href="settings.html">Pengaturan</a><a href="#" id="memOpen">Ingatan</a><a href="#" id="out">Keluar</a></div>
   </aside>
   <section class="main">
     <div class="bar">
-      <button id="burger" class="icb" type="button" aria-label="menu">☰</button>
+      <button id="burger" class="icb" type="button" aria-label="menu" data-i="menu" data-s="20"></button>
       <div class="t" id="title">RHF Super AI</div>
-      <button id="newTop" class="icb" type="button" aria-label="chat baru">✎</button>
+      <button id="newTop" class="icb" type="button" aria-label="chat baru" data-i="edit" data-s="20"></button>
     </div>
     <div id="msgs"></div>
     <div class="comp">
       <div class="cbox">
         <div class="menu" id="menu"></div>
-        <div id="prev"><img id="prevImg" alt=""><b id="prevX">✕</b></div>
+        <div id="prev"><img id="prevImg" alt=""><b id="prevX" data-i="x" data-s="12"></b></div>
+        <div id="vmodes"></div>
         <textarea id="inp" rows="1" placeholder="Tanya apa saja…"></textarea>
         <div class="tools">
           <button id="att" class="ic" type="button" aria-label="lampirkan gambar">+</button>
           <input id="file" type="file" accept="image/*" hidden>
-          <button id="pill" class="pill" type="button"><span id="pillTxt">model</span><span>▾</span></button>
+          <button id="pill" class="pill" type="button"><span id="pillTxt">model</span><span data-i="chevron" data-s="14"></span></button>
+          <button id="webT" class="ic sm" type="button" aria-label="internet" title="Internet" data-i="globe" data-s="16"></button>
+          <button id="memT" class="ic sm" type="button" aria-label="ingatan otomatis" title="Ingatan otomatis" data-i="brain" data-s="16"></button>
           <span class="grow"></span>
-          <button id="send" class="sendbtn" type="button" aria-label="kirim" disabled>↑</button>
+          <button id="send" class="sendbtn" type="button" aria-label="kirim" data-i="send" data-s="18" disabled></button>
         </div>
       </div>
     </div>
   </section>
 </div>
+<div id="memBox"><div class="memp">
+  <div class="memh"><b>Ingatan</b><span id="memN"></span><button id="memX" class="ghost" type="button">Tutup</button></div>
+  <div id="memList"></div>
+  <div class="memadd"><input id="memIn" placeholder="Tambah ingatan…" maxlength="200"><button id="memAdd" type="button">Tambah</button></div>
+  <button id="memClr" class="ghost" type="button">Hapus semua</button>
+</div></div>
 <script type="module">
 import { db, supabase, requireUser, logout } from "./js/firebase.js";
-import { loadSettings, saveSettings, GROQ_MODELS, GOOGLE_MODELS } from "./js/config.js";
+import { loadSettings, saveSettings, GROQ_MODELS } from "./js/config.js";
+import { icon, paintIcons } from "./js/icons.js";
 import { askAI } from "./js/ai.js";
-import { $, esc, md, toast, compressImage } from "./js/ui.js";
+import { $, esc, md, toast, compressImage, urlToImg } from "./js/ui.js";
+import { loadMemories, addMemory, removeMemory, clearMemories, memoryBlock, memoryCommand, extractFacts } from "./js/memory.js";
+import { VISION_PRESETS } from "./js/vision.js";
 import { collection, doc, setDoc, deleteDoc, getDocs, onSnapshot, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
+paintIcons();
 const user = await requireUser();
 $("#who").textContent = user.email || user.displayName || user.uid;
 $("#out").onclick = (e) => { e.preventDefault(); logout(); };
@@ -50,6 +63,8 @@ const chatsCol = collection(db, "users", user.uid, "chats");
 let chatId = null, msgs = [], unsubMsgs = null, img = null;
 let busy = false, aiFor = null, notice = "";
 const pending = new Map(); // pesan lokal yang belum balik dari snapshot
+let memories = [];
+loadMemories(user.uid).then((l) => { memories = l; renderMem(); }).catch((e) => note("Ingatan: " + (e.code || "") + " " + e.message));
 
 const withTimeout = (p, ms, label) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label)), ms))]);
 function note(t) { notice = t; render(); }
@@ -79,7 +94,7 @@ function renderList() {
   chats.forEach((c) => {
     const el = document.createElement("div");
     el.className = "item" + (c.id === chatId ? " on" : "");
-    el.innerHTML = `<span>${esc(c.title || "Chat")}</span><i title="hapus">✕</i>`;
+    el.innerHTML = `<span>${esc(c.title || "Chat")}</span><i title="hapus">${icon("x", 14)}</i>`;
     el.onclick = () => { openChat(c.id, c.title); sideToggle(false); };
     el.querySelector("i").onclick = (ev) => { ev.stopPropagation(); delChat(c.id); };
     l.appendChild(el);
@@ -124,6 +139,7 @@ function render() {
     h += `<div class="m ${m.role === "user" ? "user" : "assistant"}">`;
     if (m.imageUrl) h += `<img src="${esc(m.imageUrl)}" alt="gambar">`;
     if (m.content) h += `<div>${md(m.content)}</div>`;
+    if (m.sources?.length) h += '<div class="src">' + m.sources.filter((x) => /^https?:\/\//i.test(x.url)).map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(String(x.title || x.url).slice(0, 48))}</a>`).join("") + "</div>";
     if (m.role !== "user" && m.content) h += `<button class="cp" data-i="${i}" type="button">Salin</button>`;
     h += "</div>";
   });
@@ -141,29 +157,24 @@ $("#msgs").addEventListener("click", async (e) => {
   toast("tersalin", "ok");
 });
 
-// ---------- picker model (gabungan Groq + Google) di atas input ----------
-function lists() {
+// ---------- picker model Groq di atas input ----------
+function modelList() {
   const s = loadSettings();
   const g = s.groqModels?.length ? s.groqModels : GROQ_MODELS;
-  const gg = s.googleModels?.length ? s.googleModels : GOOGLE_MODELS;
-  return { groq: g.includes(s.groqModel) ? g : [s.groqModel, ...g], google: gg.includes(s.googleModel) ? gg : [s.googleModel, ...gg] };
+  return g.includes(s.groqModel) ? g : [s.groqModel, ...g];
 }
 function pillText() {
-  const s = loadSettings(), g = s.provider === "google";
-  return (g ? "Google" : "Groq") + " · " + (g ? s.googleModel : s.groqModel).split("/").pop();
+  return "Groq · " + loadSettings().groqModel.split("/").pop();
 }
 function buildMenu() {
-  const s = loadSettings(), L = lists();
-  let h = "";
-  for (const [p, name, keys, cur] of [["groq", "Groq", s.groqKeys, s.groqModel], ["google", "Google Gemini", s.googleKeys, s.googleModel]]) {
-    h += `<div class="mh">${name}${keys.length ? "" : " · belum ada key"}</div>`;
-    L[p].forEach((m) => {
-      const on = s.provider === p && cur === m;
-      h += `<div class="mi${on ? " on" : ""}" data-p="${p}" data-m="${esc(m)}"><span>${esc(m)}</span><b>${on ? "✓" : ""}</b></div>`;
-    });
-  }
+  const s = loadSettings();
+  let h = `<div class="mh">Groq${s.groqKeys.length ? "" : " · belum ada key"}</div>`;
+  modelList().forEach((m) => {
+    const on = s.groqModel === m;
+    h += `<div class="mi${on ? " on" : ""}" data-m="${esc(m)}"><span>${esc(m)}</span><b>${on ? icon("check", 14) : ""}</b></div>`;
+  });
   h += '<div class="mh">Prompt</div>';
-  s.allPrompts.forEach((p) => { h += `<div class="mi${p.id === s.promptId ? " on" : ""}" data-pr="${esc(p.id)}"><span>${esc(p.name)}</span><b>${p.id === s.promptId ? "✓" : ""}</b></div>`; });
+  s.allPrompts.forEach((p) => { h += `<div class="mi${p.id === s.promptId ? " on" : ""}" data-pr="${esc(p.id)}"><span>${esc(p.name)}</span><b>${p.id === s.promptId ? icon("check", 14) : ""}</b></div>`; });
   h += '<a class="mi" href="settings.html" style="color:var(--mut)"><span>Pengaturan & key</span></a>';
   $("#menu").innerHTML = h;
   $("#pillTxt").textContent = pillText();
@@ -173,7 +184,7 @@ $("#pill").onclick = (e) => { e.stopPropagation(); buildMenu(); $("#menu").class
 document.addEventListener("click", (e) => { if (!e.target.closest("#menu")) $("#menu").classList.remove("open"); });
 $("#menu").addEventListener("click", (e) => {
   const it = e.target.closest(".mi"); if (!it) return;
-  if (it.dataset.m) saveSettings({ provider: it.dataset.p, [it.dataset.p === "google" ? "googleModel" : "groqModel"]: it.dataset.m });
+  if (it.dataset.m) saveSettings({ groqModel: it.dataset.m });
   else if (it.dataset.pr) saveSettings({ promptId: it.dataset.pr });
   else return;
   buildMenu(); $("#menu").classList.remove("open");
@@ -190,11 +201,55 @@ $("#send").onclick = send;
 $("#att").onclick = () => $("#file").click();
 $("#file").onchange = async (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  try { img = await compressImage(f); $("#prevImg").src = img.dataUrl; $("#prev").style.display = "block"; updateSend(); }
+  try { img = await compressImage(f); $("#prevImg").src = img.dataUrl; $("#prev").style.display = "block"; paintModes(); updateSend(); }
   catch (x) { toast(x.message, "err"); }
 };
-function clearImg() { img = null; $("#prev").style.display = "none"; updateSend(); }
+function clearImg() { img = null; $("#prev").style.display = "none"; paintModes(); updateSend(); }
 $("#prevX").onclick = clearImg;
+
+function paintModes() {
+  const v = $("#vmodes");
+  v.style.display = img ? "flex" : "none";
+  v.innerHTML = Object.entries(VISION_PRESETS).map(([k, p]) => `<button type="button" class="chip" data-k="${k}">${esc(p.label)}</button>`).join("");
+}
+$("#vmodes").addEventListener("click", (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  inp.value = VISION_PRESETS[b.dataset.k].prompt; autosize(); inp.focus();
+});
+
+function paintToggles() {
+  const s = loadSettings();
+  $("#webT").classList.toggle("on", !!s.web);
+  $("#memT").classList.toggle("on", s.autoMemory !== false);
+}
+$("#webT").onclick = () => { const on = !loadSettings().web; saveSettings({ web: on }); paintToggles(); toast(on ? "Internet nyala" : "Internet mati", "ok"); };
+$("#memT").onclick = () => { const on = loadSettings().autoMemory === false; saveSettings({ autoMemory: on }); paintToggles(); toast(on ? "Ingatan otomatis nyala" : "Ingatan otomatis mati", "ok"); };
+paintToggles();
+
+function renderMem() {
+  $("#memN").textContent = memories.length + " item";
+  $("#memList").innerHTML = memories.length
+    ? memories.map((m) => `<div class="mem"><span>${esc(m.text)}</span><i data-id="${esc(m.id)}">${icon("x", 14)}</i></div>`).join("")
+    : '<p class="muted">Belum ada ingatan.</p>';
+}
+$("#memOpen").onclick = (e) => { e.preventDefault(); renderMem(); $("#memBox").classList.add("open"); sideToggle(false); };
+$("#memX").onclick = () => $("#memBox").classList.remove("open");
+$("#memBox").addEventListener("click", async (e) => {
+  if (e.target.id === "memBox") { $("#memBox").classList.remove("open"); return; }
+  const i = e.target.closest("i[data-id]"); if (!i) return;
+  try { await removeMemory(user.uid, i.dataset.id); memories = memories.filter((m) => m.id !== i.dataset.id); renderMem(); }
+  catch (x) { toast(x.message, "err"); }
+});
+$("#memAdd").onclick = async () => {
+  const t = $("#memIn").value.trim(); if (!t) return;
+  try { memories = await addMemory(user.uid, t, memories); $("#memIn").value = ""; renderMem(); }
+  catch (x) { toast(x.message, "err"); }
+};
+$("#memClr").onclick = async () => {
+  if (!memories.length || !confirm("hapus semua ingatan?")) return;
+  try { await clearMemories(user.uid, memories); memories = []; renderMem(); }
+  catch (x) { toast(x.message, "err"); }
+};
 
 // ---------- kirim ----------
 async function send() {
@@ -232,19 +287,39 @@ async function send() {
     save(doc(chatsCol, cid), { updatedAt: serverTimestamp() }, { merge: true });
 
     // 4) AI
+    const cmd = memoryCommand(text);
+    if (cmd?.type === "add") memories = await addMemory(user.uid, cmd.text, memories).catch(() => memories);
+    if (cmd?.type === "clear") { await clearMemories(user.uid, memories).catch(() => {}); memories = []; }
+    renderMem();
     const hist = view().filter((m) => m.id !== uref.id && (m.content || m.imageUrl))
       .map((m) => ({ role: m.role, content: m.content || "(gambar)" }));
     hist.push({ role: "user", content: text });
-    const reply = await withTimeout(askAI(hist.slice(-24), sendImg), 90000, "AI tidak merespon (90 detik)");
+    const st = loadSettings();
+    let images = sendImg ? [sendImg] : [];
+    if (!images.length && /gambar|foto|screenshot|image|\bss\b/i.test(text)) {
+      const last = [...view()].reverse().find((m) => m.role === "user" && /^https?:/.test(m.imageUrl || ""));
+      if (last) { try { images = [await urlToImg(last.imageUrl)]; } catch {} }
+    }
+    const web = !!st.web && !images.length;
+    if (st.web && images.length) toast("Internet dilewati untuk pesan bergambar");
+    const res = await withTimeout(askAI(hist.slice(-24), { images, web, memory: memoryBlock(memories) }), 90000, "AI tidak merespon (90 detik)");
+    const reply = res.text, sources = res.sources || [];
 
     const aref = doc(msgsCol);
-    pending.set(aref.id, { id: aref.id, cid, role: "assistant", content: reply });
-    save(aref, { role: "assistant", content: reply, createdAt: serverTimestamp() });
+    pending.set(aref.id, { id: aref.id, cid, role: "assistant", content: reply, sources });
+    save(aref, { role: "assistant", content: reply, sources, createdAt: serverTimestamp() });
     save(doc(chatsCol, cid), { updatedAt: serverTimestamp() }, { merge: true });
+
+    if (st.autoMemory !== false && !cmd && text.length >= 12) {
+      extractFacts(text, reply, memories).then(async (facts) => {
+        for (const f of facts) memories = await addMemory(user.uid, f, memories);
+        if (facts.length) { renderMem(); toast("Ingatan baru: " + facts.length, "ok"); }
+      }).catch(() => {});
+    }
   } catch (e) {
     // upload gagal sebelum tersimpan: balikin teks supaya tidak hilang
     if (uid_ && pending.has(uid_) && sendImg && !String(e.message).startsWith("AI") && /upload|Supabase/i.test(e.message)) {
-      pending.delete(uid_); inp.value = text; img = sendImg; $("#prevImg").src = sendImg.dataUrl; $("#prev").style.display = "block"; autosize();
+      pending.delete(uid_); inp.value = text; img = sendImg; $("#prevImg").src = sendImg.dataUrl; $("#prev").style.display = "block"; paintModes(); autosize();
     }
     notice = e.message; toast(e.message, "err");
   } finally {

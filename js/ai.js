@@ -1,14 +1,13 @@
 import { loadSettings } from "./config.js";
 
 const GROQ = "https://api.groq.com/openai/v1";
-const GGL = "https://generativelanguage.googleapis.com/v1beta";
 
 function mkErr(name, r, j) {
   const e = new Error(`${name} ${r.status}: ${j?.error?.message || r.statusText}`);
   e.status = r.status;
   return e;
 }
-// coba key aktif dulu; kalau 401/403/429/key invalid → pindah key berikutnya (kalau rotate nyala)
+
 async function withKeys(keys, activeId, rotate, label, fn) {
   if (!keys.length) throw new Error(`${label} key kosong — isi di settings.html`);
   const ordered = [...keys.filter((k) => k.id === activeId), ...keys.filter((k) => k.id !== activeId)];
@@ -25,79 +24,67 @@ async function withKeys(keys, activeId, rotate, label, fn) {
   throw last;
 }
 
-// history: [{role,content}], img: {dataUrl,mime,b64}|null (nempel di pesan user terakhir)
-export async function askAI(history, img = null) {
-  const s = loadSettings();
-  return s.provider === "google" ? askGoogle(s, history, img) : askGroq(s, history, img);
+const today = () => new Date().toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+function buildSystem(s, o) {
+  if (o.system !== undefined) return o.system;
+  const parts = [];
+  if (s.system) parts.push(s.system);
+  parts.push("Hari ini: " + today() + ".");
+  if (o.memory) parts.push(o.memory);
+  if (o.web) parts.push("Pakai pencarian web untuk info terbaru dan sebut sumbernya singkat.");
+  if (o.images?.length) parts.push("Untuk gambar: salin teks persis apa adanya, jelaskan pola dan detail dengan teliti, katakan jika ada bagian yang tidak jelas.");
+  return parts.join("\n\n");
 }
 
-function askGroq(s, history, img) {
+export function askAI(history, o = {}) {
+  return askGroq(loadSettings(), history, o);
+}
+
+function askGroq(s, history, o) {
+  const imgs = o.images || [];
+  const web = !!o.web && !imgs.length;
   const msgs = [];
-  if (s.system) msgs.push({ role: "system", content: s.system });
+  const sys = buildSystem(s, { ...o, web });
+  if (sys) msgs.push({ role: "system", content: sys });
   history.forEach((m, i) => {
-    if (img && i === history.length - 1 && m.role === "user") {
+    if (imgs.length && i === history.length - 1 && m.role === "user") {
       msgs.push({ role: "user", content: [
         { type: "text", text: m.content || "Jelaskan gambar ini." },
-        { type: "image_url", image_url: { url: img.dataUrl } }
+        ...imgs.map((im) => ({ type: "image_url", image_url: { url: im.dataUrl } }))
       ]});
     } else msgs.push({ role: m.role, content: m.content });
   });
-  const model = img ? s.groqVisionModel : s.groqModel;
+  const model = imgs.length ? s.groqVisionModel : web ? s.groqWebModel : s.groqModel;
+  const body = { model, messages: msgs };
+  if (!web) body.temperature = 0.7;
   return withKeys(s.groqKeys, s.groqKeyId, s.rotate, "Groq", async (key) => {
     const r = await fetch(GROQ + "/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({ model, messages: msgs, temperature: 0.7 })
+      body: JSON.stringify(body)
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw mkErr("Groq", r, j);
-    return j.choices?.[0]?.message?.content || "(kosong)";
+    const msg = j.choices?.[0]?.message || {};
+    const sources = (msg.executed_tools || [])
+      .flatMap((t) => t.search_results?.results || [])
+      .filter((x) => x.url)
+      .slice(0, 6)
+      .map((x) => ({ title: x.title || x.url, url: x.url }));
+    return { text: msg.content || "(kosong)", sources };
   });
 }
 
-function askGoogle(s, history, img) {
-  const contents = history.map((m, i) => {
-    const parts = [{ text: m.content || (img && i === history.length - 1 ? "Jelaskan gambar ini." : " ") }];
-    if (img && i === history.length - 1 && m.role === "user")
-      parts.push({ inline_data: { mime_type: img.mime, data: img.b64 } });
-    return { role: m.role === "assistant" ? "model" : "user", parts };
-  });
-  const body = { contents };
-  if (s.system) body.systemInstruction = { parts: [{ text: s.system }] };
-  return withKeys(s.googleKeys, s.googleKeyId, s.rotate, "Google", async (key) => {
-    const r = await fetch(`${GGL}/models/${encodeURIComponent(s.googleModel)}:generateContent?key=${encodeURIComponent(key)}`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw mkErr("Google", r, j);
-    const t = j.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("");
-    if (!t) throw new Error("Google: respons kosong/diblok (" + (j.promptFeedback?.blockReason || j.candidates?.[0]?.finishReason || "?") + ")");
-    return t;
-  });
-}
-
-export async function testProvider(provider) {
-  const s = { ...loadSettings(), provider, system: "" };
-  const h = [{ role: "user", content: "balas satu kata: pong" }];
-  const t0 = performance.now();
-  const out = provider === "google" ? await askGoogle(s, h, null) : await askGroq(s, h, null);
-  return { ms: Math.round(performance.now() - t0), out: out.slice(0, 60) };
-}
-
-// ambil daftar model asli dari API pakai key tersimpan
-export async function listModels(provider) {
+export async function testProvider() {
   const s = loadSettings();
-  if (provider === "google") {
-    return withKeys(s.googleKeys, s.googleKeyId, s.rotate, "Google", async (key) => {
-      const r = await fetch(`${GGL}/models?pageSize=200&key=${encodeURIComponent(key)}`);
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw mkErr("Google", r, j);
-      return (j.models || [])
-        .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-        .map((m) => m.name.replace(/^models\//, ""))
-        .filter((n) => /^gemini/.test(n) && !/embed|tts|image|live|audio|robotics/.test(n))
-        .sort();
-    });
-  }
+  const t0 = performance.now();
+  const out = await askGroq(s, [{ role: "user", content: "balas satu kata: pong" }], { system: "" });
+  return { ms: Math.round(performance.now() - t0), out: out.text.slice(0, 60) };
+}
+
+export async function listModels() {
+  const s = loadSettings();
   return withKeys(s.groqKeys, s.groqKeyId, s.rotate, "Groq", async (key) => {
     const r = await fetch(GROQ + "/models", { headers: { Authorization: "Bearer " + key } });
     const j = await r.json().catch(() => ({}));

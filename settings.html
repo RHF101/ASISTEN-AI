@@ -4,11 +4,10 @@
 <title>RHF Super AI — Settings</title><link rel="stylesheet" href="style.css">
 </head><body>
 <div class="wrap">
-  <div class="line" style="align-items:center"><h1 style="flex:1">Settings</h1><a href="chat.html">← chat</a></div>
+  <div class="line" style="align-items:center"><h1 style="flex:1">Settings</h1><a href="chat.html"><span data-i="back" data-s="16"></span> chat</a></div>
 
   <div class="box">
-    <h2>Provider & rotasi key</h2>
-    <select id="provider"><option value="groq">Groq</option><option value="google">Google (Gemini)</option></select>
+    <h2>Rotasi key</h2>
     <label style="display:flex;gap:8px;align-items:center;flex-direction:row"><input id="rotate" type="checkbox" style="width:auto"> kalau key kena limit/invalid (401/403/429), otomatis coba key lain</label>
   </div>
 
@@ -24,23 +23,13 @@
   </div>
 
   <div class="box">
-    <h2>Google API (Gemini)</h2>
-    <label>Key tersimpan (yang dipilih = aktif)<select id="googleKeySel"></select></label>
-    <div class="line"><input id="googleKeyLabel" placeholder="label (opsional)"><input id="googleKeyVal" type="password" autocomplete="off" placeholder="AIza..."></div>
-    <div class="line"><button id="googleKeyAdd" class="ghost" type="button">+ Tambah key</button><button id="googleKeyDel" class="ghost" type="button">Hapus key terpilih</button></div>
-    <label>Model<select id="googleModel"></select></label>
-    <div class="line"><button id="googleFetch" class="ghost" type="button">Ambil daftar model</button><button id="googleTest" class="ghost" type="button">Tes Google</button></div>
-    <div class="res" id="googleRes"></div>
-  </div>
-
-  <div class="box">
     <h2>Prompt sistem</h2>
     <label>Prompt aktif (ditanam ke semua chat)<select id="promptSel"></select></label>
     <label>Nama<input id="promptName" placeholder="nama prompt"></label>
     <label>Isi prompt<textarea id="promptText" rows="6"></textarea></label>
     <div class="line"><button id="pNew" class="ghost" type="button">Simpan sebagai baru</button><button id="pUpd" class="ghost" type="button">Update</button><button id="pDel" class="ghost" type="button">Hapus</button></div>
     <div class="res" id="pRes"></div>
-    <p style="margin:0;color:var(--mut);font-size:12px">🔒 = bawaan (tidak bisa diubah/dihapus, tapi bisa dijadikan dasar lewat "Simpan sebagai baru"). Yang dipakai AI = teks yang tersimpan.</p>
+    <p style="margin:0;color:var(--mut);font-size:12px"><span data-i="lock" data-s="12"></span> = bawaan (tidak bisa diubah/dihapus, tapi bisa dijadikan dasar lewat "Simpan sebagai baru"). Yang dipakai AI = teks yang tersimpan.</p>
   </div>
 
   <div class="box">
@@ -63,17 +52,19 @@
 </div>
 <script type="module">
 import { db, supabase, requireUser } from "./js/firebase.js";
-import { loadSettings, saveSettings, BUILTIN_PROMPTS, GROQ_MODELS, GOOGLE_MODELS } from "./js/config.js";
+import { loadSettings, saveSettings, BUILTIN_PROMPTS, GROQ_MODELS } from "./js/config.js";
+import { icon, paintIcons } from "./js/icons.js";
 import { testProvider, listModels } from "./js/ai.js";
 import { $ } from "./js/ui.js";
 import { doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
+paintIcons();
 const user = await requireUser();
 $("#who").textContent = "login: " + (user.email || user.uid);
 
-const out = (id, ok, t) => { const e = $("#" + id); e.className = "res " + (ok ? "ok" : "err"); e.textContent = (ok ? "✓ " : "✗ ") + t; };
+const out = (id, ok, t) => { const e = $("#" + id); e.className = "res " + (ok ? "ok" : "err"); e.innerHTML = icon(ok ? "check" : "x", 14); e.append(" " + t); };
 const wait = (id) => { const e = $("#" + id); e.className = "res"; e.textContent = "…"; };
-const mask = (k) => (k.length > 12 ? k.slice(0, 6) + "…" + k.slice(-4) : "••••");
+const mask = (k) => (k.length > 12 ? k.slice(0, 6) + "…" + k.slice(-4) : "****");
 const uid = () => "k-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function fillSel(sel, list, cur) {
@@ -85,13 +76,12 @@ function fillSel(sel, list, cur) {
 
 // ---------- umum ----------
 let S = loadSettings();
-$("#provider").value = S.provider;
 $("#rotate").checked = !!S.rotate;
 $("#bucket").value = S.bucket;
 $("#save").onclick = () => {
   saveSettings({
-    provider: $("#provider").value, rotate: $("#rotate").checked, bucket: $("#bucket").value.trim() || "chat-images",
-    groqModel: $("#groqModel").value, groqVisionModel: $("#groqVisionModel").value, googleModel: $("#googleModel").value
+    rotate: $("#rotate").checked, bucket: $("#bucket").value.trim() || "chat-images",
+    groqModel: $("#groqModel").value, groqVisionModel: $("#groqVisionModel").value
   });
   out("rSave", true, "tersimpan");
 };
@@ -101,14 +91,12 @@ const visionOnly = (l) => { const v = l.filter((n) => /llama-4|vision|scout|mave
 function renderModels() {
   S = loadSettings();
   const gl = S.groqModels?.length ? S.groqModels : GROQ_MODELS;
-  const ggl = S.googleModels?.length ? S.googleModels : GOOGLE_MODELS;
   fillSel($("#groqModel"), gl, S.groqModel);
   fillSel($("#groqVisionModel"), visionOnly(gl), S.groqVisionModel);
-  fillSel($("#googleModel"), ggl, S.googleModel);
 }
 renderModels();
 
-// ---------- key (groq & google) ----------
+// ---------- key groq ----------
 function renderKeys(p) {
   S = loadSettings();
   const keys = S[p + "Keys"], sel = $("#" + p + "KeySel");
@@ -117,7 +105,7 @@ function renderKeys(p) {
   keys.forEach((k) => { const o = document.createElement("option"); o.value = k.id; o.textContent = `${k.label || "key"} — ${mask(k.key)}`; sel.appendChild(o); });
   sel.value = keys.some((k) => k.id === S[p + "KeyId"]) ? S[p + "KeyId"] : keys[0].id;
 }
-for (const p of ["groq", "google"]) {
+for (const p of ["groq"]) {
   renderKeys(p);
   $("#" + p + "KeySel").onchange = (e) => saveSettings({ [p + "KeyId"]: e.target.value });
   $("#" + p + "KeyAdd").onclick = () => {
@@ -154,7 +142,7 @@ for (const p of ["groq", "google"]) {
       if (p === "groq") {
         if (!list.includes(cur.groqModel)) patch.groqModel = list[0];
         const v = visionOnly(list); if (!v.includes(cur.groqVisionModel)) patch.groqVisionModel = v[0];
-      } else if (!list.includes(cur.googleModel)) patch.googleModel = list[0];
+      }
       saveSettings(patch); renderModels();
       out(p + "Res", true, `${list.length} model dimuat` + (Object.keys(patch).length ? " — model lama tidak ada lagi, diganti otomatis" : ""));
     } catch (e) { out(p + "Res", false, e.message); }
@@ -166,7 +154,7 @@ const isB = (id) => BUILTIN_PROMPTS.some((b) => b.id === id);
 function renderPrompts(keepId) {
   S = loadSettings();
   const sel = $("#promptSel"); sel.innerHTML = "";
-  S.allPrompts.forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = (isB(p.id) ? "🔒 " : "") + p.name; sel.appendChild(o); });
+  S.allPrompts.forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = (isB(p.id) ? "(bawaan) " : "") + p.name; sel.appendChild(o); });
   sel.value = keepId || S.promptId;
   loadPromptFields();
 }

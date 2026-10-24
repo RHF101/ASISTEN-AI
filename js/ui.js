@@ -40,3 +40,9 @@ export function compressImage(file, max = 1280, q = 0.85) {
     img.src = u;
   });
 }
+export async function urlToImg(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("gagal ambil gambar");
+  const blob = await r.blob();
+  return compressImage(new File([blob], "x.jpg", { type: blob.type || "image/jpeg" }));
+}
