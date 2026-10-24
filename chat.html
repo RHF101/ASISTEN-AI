@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="id"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RHF Super AI</title><link rel="stylesheet" href="style.css">
+</head><body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="top"><button id="newChat" type="button">+ Chat baru</button></div>
+    <div class="list" id="list"></div>
+    <div class="bot"><b id="who">…</b><a href="settings.html">⚙</a><a href="#" id="out">keluar</a></div>
+  </aside>
+  <section class="main">
+    <div class="bar">
+      <button id="burger" class="ghost" type="button">☰</button>
+      <div class="t" id="title">Chat baru</div>
+      <select id="prov"><option value="groq">Groq</option><option value="google">Google</option></select>
+    </div>
+    <div id="msgs"><div class="empty">mulai ngobrol. kirim gambar juga bisa 📎</div></div>
+    <div id="status"></div>
+    <div class="comp">
+      <div id="prev"><img id="prevImg" alt=""><b id="prevX">✕</b></div>
+      <div class="row">
+        <button id="att" class="ghost" type="button">📎</button>
+        <input id="file" type="file" accept="image/*" hidden>
+        <textarea id="inp" rows="1" placeholder="tulis pesan…"></textarea>
+        <button id="send" type="button">Kirim</button>
+      </div>
+    </div>
+  </section>
+</div>
+<script type="module">
+import { db, supabase, requireUser, logout } from "./js/firebase.js";
+import { loadSettings, saveSettings } from "./js/config.js";
+import { askAI } from "./js/ai.js";
+import { $, esc, md, toast, compressImage } from "./js/ui.js";
+import { collection, doc, addDoc, setDoc, updateDoc, deleteDoc, getDocs, onSnapshot, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const user = await requireUser();
+$("#who").textContent = user.email || user.displayName || user.uid;
+$("#out").onclick = (e) => { e.preventDefault(); logout(); };
+
+const chatsCol = collection(db, "users", user.uid, "chats");
+let chatId = null, msgs = [], unsubMsgs = null, img = null, busy = false;
+
+$("#prov").value = loadSettings().provider;
+$("#prov").onchange = (e) => saveSettings({ provider: e.target.value });
+$("#burger").onclick = () => $("#side").classList.toggle("open");
+$("#side").addEventListener("click", (e) => { if (e.target.closest(".item")) $("#side").classList.remove("open"); });
+
+// daftar chat — realtime
+let chats = [];
+onSnapshot(query(chatsCol, orderBy("updatedAt", "desc")), (snap) => {
+  chats = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  renderList();
+}, (e) => toast("Firestore: " + e.message, "err"));
+
+function renderList() {
+  const l = $("#list"); l.innerHTML = "";
+  chats.forEach((c) => {
+    const el = document.createElement("div");
+    el.className = "item" + (c.id === chatId ? " on" : "");
+    el.innerHTML = `<span>${esc(c.title || "Chat")}</span><i title="hapus">✕</i>`;
+    el.onclick = () => openChat(c.id, c.title);
+    el.querySelector("i").onclick = (ev) => { ev.stopPropagation(); delChat(c.id); };
+    l.appendChild(el);
+  });
+}
+
+function openChat(id, title) {
+  chatId = id; $("#title").textContent = title || "Chat baru"; renderList();
+  if (unsubMsgs) unsubMsgs();
+  msgs = []; renderMsgs();
+  if (!id) return;
+  unsubMsgs = onSnapshot(query(collection(chatsCol, id, "messages"), orderBy("createdAt", "asc")), (snap) => {
+    msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderMsgs();
+  }, (e) => toast("Firestore: " + e.message, "err"));
+}
+
+function renderMsgs() {
+  const box = $("#msgs");
+  if (!msgs.length) { box.innerHTML = '<div class="empty">mulai ngobrol. kirim gambar juga bisa 📎</div>'; return; }
+  box.innerHTML = msgs.map((m) =>
+    `<div class="m ${m.role === "user" ? "user" : "assistant"}">` +
+    (m.imageUrl ? `<img src="${esc(m.imageUrl)}" alt="gambar" loading="lazy">` : "") +
+    (m.content ? md(m.content) : "") + "</div>").join("");
+  box.scrollTop = box.scrollHeight;
+}
+
+async function delChat(id) {
+  if (!confirm("hapus chat ini?")) return;
+  try {
+    const ms = await getDocs(collection(chatsCol, id, "messages"));
+    await Promise.all(ms.docs.map((d) => deleteDoc(d.ref)));
+    await deleteDoc(doc(chatsCol, id));
+    if (id === chatId) openChat(null);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+$("#newChat").onclick = () => { openChat(null); $("#side").classList.remove("open"); $("#inp").focus(); };
+
+// lampiran gambar
+$("#att").onclick = () => $("#file").click();
+$("#file").onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try { img = await compressImage(f); $("#prevImg").src = img.dataUrl; $("#prev").style.display = "block"; }
+  catch (x) { toast(x.message, "err"); }
+};
+function clearImg() { img = null; $("#prev").style.display = "none"; }
+$("#prevX").onclick = clearImg;
+
+const inp = $("#inp");
+inp.addEventListener("input", () => { inp.style.height = "auto"; inp.style.height = Math.min(inp.scrollHeight, 140) + "px"; });
+inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && matchMedia("(min-width:761px)").matches) { e.preventDefault(); send(); } });
+$("#send").onclick = send;
+
+async function send() {
+  const text = inp.value.trim();
+  if (busy || (!text && !img)) return;
+  busy = true; $("#send").disabled = true;
+  const sendImg = img;
+  const status = (t) => ($("#status").textContent = t);
+  try {
+    if (!chatId) {
+      const ref = await addDoc(chatsCol, { title: (text || "Gambar").slice(0, 40), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      openChat(ref.id, (text || "Gambar").slice(0, 40));
+    }
+    const cid = chatId;
+    let imageUrl = null;
+    if (sendImg) {
+      status("upload gambar ke Supabase…");
+      const bucket = loadSettings().bucket;
+      const path = `${user.uid}/${Date.now()}.jpg`;
+      const up = await supabase.storage.from(bucket).upload(path, sendImg.blob, { contentType: sendImg.mime, upsert: false });
+      if (up.error) throw new Error("Supabase upload: " + up.error.message);
+      imageUrl = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+    }
+    inp.value = ""; inp.style.height = "auto"; clearImg();
+    const msgsCol = collection(chatsCol, cid, "messages");
+    await addDoc(msgsCol, { role: "user", content: text, imageUrl, createdAt: serverTimestamp() });
+    await updateDoc(doc(chatsCol, cid), { updatedAt: serverTimestamp() });
+
+    status("AI mikir…");
+    const history = [...msgs.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content })), { role: "user", content: text }].slice(-24);
+    const reply = await askAI(history, sendImg);
+    await addDoc(msgsCol, { role: "assistant", content: reply, createdAt: serverTimestamp() });
+    await updateDoc(doc(chatsCol, cid), { updatedAt: serverTimestamp() });
+    status("");
+  } catch (e) {
+    status(""); toast(e.message, "err");
+  } finally { busy = false; $("#send").disabled = false; }
+}
+</script></body></html>

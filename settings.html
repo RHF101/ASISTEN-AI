@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="id"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RHF Super AI — Settings</title><link rel="stylesheet" href="style.css">
+</head><body>
+<div class="wrap">
+  <div class="line" style="align-items:center"><h1 style="flex:1">Settings</h1><a href="chat.html">← chat</a></div>
+
+  <div class="box">
+    <h2>Provider default</h2>
+    <select id="provider"><option value="groq">Groq</option><option value="google">Google (Gemini)</option></select>
+  </div>
+
+  <div class="box">
+    <h2>Groq</h2>
+    <label>API key (gsk_…)<input id="groqKey" type="password" autocomplete="off" placeholder="gsk_..."></label>
+    <label>Model teks<input id="groqModel"></label>
+    <label>Model vision (kalau kirim gambar)<input id="groqVisionModel"></label>
+    <div class="line"><button id="tGroq" class="ghost" type="button">Tes Groq</button></div>
+    <div class="res" id="rGroq"></div>
+  </div>
+
+  <div class="box">
+    <h2>Google API (Gemini)</h2>
+    <label>API key (AIza…)<input id="googleKey" type="password" autocomplete="off" placeholder="AIza..."></label>
+    <label>Model<input id="googleModel"></label>
+    <div class="line"><button id="tGoogle" class="ghost" type="button">Tes Google</button></div>
+    <div class="res" id="rGoogle"></div>
+  </div>
+
+  <div class="box">
+    <h2>Supabase (gambar)</h2>
+    <label>Nama bucket (public)<input id="bucket"></label>
+    <div class="line"><button id="tSb" class="ghost" type="button">Tes upload</button></div>
+    <div class="res" id="rSb"></div>
+  </div>
+
+  <div class="box">
+    <h2>Firebase (login + realtime)</h2>
+    <div class="res" id="who">…</div>
+    <div class="line"><button id="tFb" class="ghost" type="button">Tes Firestore (tulis/baca/hapus)</button></div>
+    <div class="res" id="rFb"></div>
+  </div>
+
+  <div class="box">
+    <h2>System prompt</h2>
+    <textarea id="system" rows="4"></textarea>
+  </div>
+
+  <div class="line"><button id="save" type="button">Simpan</button><button id="reset" class="ghost" type="button">Reset key</button></div>
+  <div class="res" id="rSave"></div>
+  <p class="sub" style="color:var(--mut);font-size:13px">key disimpan di localStorage browser ini saja, tidak masuk Firestore.</p>
+</div>
+<script type="module">
+import { db, supabase, requireUser } from "./js/firebase.js";
+import { loadSettings, saveSettings } from "./js/config.js";
+import { testProvider } from "./js/ai.js";
+import { $ } from "./js/ui.js";
+import { doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const user = await requireUser();
+$("#who").textContent = "login: " + (user.email || user.uid);
+const F = ["provider", "groqKey", "groqModel", "groqVisionModel", "googleKey", "googleModel", "bucket", "system"];
+const s = loadSettings();
+F.forEach((k) => ($("#" + k).value = s[k] ?? ""));
+const collect = () => Object.fromEntries(F.map((k) => [k, $("#" + k).value.trim()]));
+const out = (id, ok, t) => { const e = $("#" + id); e.className = "res " + (ok ? "ok" : "err"); e.textContent = (ok ? "✓ " : "✗ ") + t; };
+const wait = (id) => { const e = $("#" + id); e.className = "res"; e.textContent = "…"; };
+
+$("#save").onclick = () => { saveSettings(collect()); out("rSave", true, "tersimpan"); };
+$("#reset").onclick = () => { $("#groqKey").value = ""; $("#googleKey").value = ""; saveSettings({ groqKey: "", googleKey: "" }); out("rSave", true, "key dihapus"); };
+
+async function tp(p, id) {
+  saveSettings(collect()); wait(id);
+  try { const r = await testProvider(p); out(id, true, `${r.ms}ms — "${r.out}"`); }
+  catch (e) { out(id, false, e.message); }
+}
+$("#tGroq").onclick = () => tp("groq", "rGroq");
+$("#tGoogle").onclick = () => tp("google", "rGoogle");
+
+$("#tSb").onclick = async () => {
+  saveSettings(collect()); wait("rSb");
+  const bucket = loadSettings().bucket;
+  try {
+    const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+    const path = `${user.uid}/_test_${Date.now()}.png`;
+    const up = await supabase.storage.from(bucket).upload(path, new Blob([png], { type: "image/png" }));
+    if (up.error) throw new Error("upload: " + up.error.message);
+    const url = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("upload ok tapi URL publik " + r.status + " (bucket belum public?)");
+    const rm = await supabase.storage.from(bucket).remove([path]);
+    out("rSb", true, "upload + baca publik OK" + (rm.error ? " (file tes tidak terhapus: tidak ada policy delete, normal)" : ""));
+  } catch (e) { out("rSb", false, e.message); }
+};
+
+$("#tFb").onclick = async () => {
+  wait("rFb");
+  try {
+    const ref = doc(db, "users", user.uid, "_test", "ping");
+    await setDoc(ref, { t: Date.now() });
+    const g = await getDoc(ref);
+    await deleteDoc(ref);
+    out("rFb", g.exists(), "Firestore tulis/baca/hapus OK");
+  } catch (e) { out("rFb", false, e.message); }
+};
+</script></body></html>
