@@ -22,15 +22,22 @@ export const BUILTIN_PROMPTS = [
 ];
 
 // daftar awal — daftar asli diambil dari API lewat tombol "Ambil daftar model" di settings
-export const GROQ_MODELS = ["openai/gpt-oss-120b"];
+export const GROQ_MODELS = [
+  "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b",
+  "meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct",
+  "qwen/qwen3-32b", "moonshotai/kimi-k2-instruct"
+];
+export const GOOGLE_MODELS = [
+  "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
+  "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"
+];
 
 export const DEFAULTS = {
-  groqModel: "openai/gpt-oss-120b",
+  provider: "groq",
+  groqModel: "llama-3.1-8b-instant",
   groqVisionModel: "meta-llama/llama-4-scout-17b-16e-instruct",
+  googleModel: "gemini-2.5-flash",
   bucket: "chat-images",
-  web: false,
-  autoWeb: true,
-  autoMemory: true,
   rotate: true,
   promptId: "b-default"
 };
@@ -42,8 +49,10 @@ export function loadSettings() {
   const r = raw();
   const s = { ...DEFAULTS, ...r };
   s.groqKeys = Array.isArray(r.groqKeys) ? r.groqKeys : [];
+  s.googleKeys = Array.isArray(r.googleKeys) ? r.googleKeys : [];
   // migrasi key tunggal versi lama
   if (!s.groqKeys.length && r.groqKey) s.groqKeys = [{ id: "k-old-groq", label: "key lama", key: r.groqKey }];
+  if (!s.googleKeys.length && r.googleKey) s.googleKeys = [{ id: "k-old-google", label: "key lama", key: r.googleKey }];
   s.prompts = Array.isArray(r.prompts) ? r.prompts : [];
   s.allPrompts = [...BUILTIN_PROMPTS, ...s.prompts];
   const p = s.allPrompts.find((x) => x.id === s.promptId) || s.allPrompts[0];
