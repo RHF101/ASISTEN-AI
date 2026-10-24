@@ -13,31 +13,26 @@ export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 const KEY = "rhf_super_settings_v1";
 
+const CODE_FORMAT = "Aturan kode: (1) Kode harus lengkap, benar, dan langsung bisa dijalankan. Tanpa placeholder, tanpa potongan, tanpa kata 'dan seterusnya', tanpa komentar di dalam kode. (2) Semua kode wajib berada di dalam blok tiga backtick dengan nama bahasa. (3) Jika kode lebih dari 30 baris atau terdiri dari beberapa file, setiap file wajib satu blok sendiri dengan baris pembuka berformat ```bahasa path/nama.ext, misalnya ```html index.html atau ```js src/app.js. Aplikasi mengubahnya jadi kartu file yang bisa diunduh, dipratinjau, dan disalin. Urutkan dari file utama. (4) Proyek web kecil sampai menengah: satu file index.html berisi HTML, CSS, dan JavaScript. Proyek besar: pecah per file dan hubungkan lewat link/script relatif supaya pratinjau jalan. (5) UI harus modern, responsif mobile-first, kontras baik, spasi lega, animasi halus, ikon SVG, tanpa gambar eksternal. Pakai library CDN hanya bila benar-benar membantu, dengan versi tetap. (6) Tangani error, input kosong, dan layar kecil. Nama variabel jelas, struktur rapi. (7) Setelah kode tulis maksimal 3 baris: cara menjalankan dan asumsi. Jangan mengulang isi kode di luar blok.";
+
 export const BUILTIN_PROMPTS = [
-  { id: "b-default", name: "Default", text: "Kamu RHF Super AI. Jawab singkat, jelas, bahasa mengikuti user. Kode selalu lengkap dan siap jalan." },
-  { id: "b-coder", name: "Coder", text: "Kamu senior engineer. Jawab langsung dengan kode lengkap yang jalan, tanpa basa-basi. Sebut asumsi dalam satu baris." },
+  { id: "b-default", name: "Default", text: "Kamu RHF Super AI. Jawab singkat, jelas, bahasa mengikuti user. " + CODE_FORMAT },
+  { id: "b-coder", name: "Coder", text: "Kamu senior engineer dan desainer UI. Jawab langsung dengan kode lengkap yang jalan, tanpa basa-basi. Sebut asumsi dalam satu baris. " + CODE_FORMAT },
   { id: "b-short", name: "Singkat", text: "Jawab sesingkat mungkin, maksimal 3 kalimat kecuali user minta detail." },
   { id: "b-teacher", name: "Guru", text: "Jelaskan step by step dengan contoh sederhana, bahasa santai, cek pemahaman di akhir." },
   { id: "b-trans", name: "Penerjemah", text: "Terjemahkan teks user ke bahasa Indonesia. Kalau sudah bahasa Indonesia, terjemahkan ke Inggris. Keluarkan hasil terjemahan saja." }
 ];
 
-// daftar awal — daftar asli diambil dari API lewat tombol "Ambil daftar model" di settings
-export const GROQ_MODELS = [
-  "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b",
-  "meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct",
-  "qwen/qwen3-32b", "moonshotai/kimi-k2-instruct"
-];
-export const GOOGLE_MODELS = [
-  "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
-  "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"
-];
+export const GROQ_MODELS = ["openai/gpt-oss-120b"];
 
 export const DEFAULTS = {
-  provider: "groq",
-  groqModel: "llama-3.1-8b-instant",
+  groqModel: "openai/gpt-oss-120b",
   groqVisionModel: "meta-llama/llama-4-scout-17b-16e-instruct",
-  googleModel: "gemini-2.5-flash",
   bucket: "chat-images",
+  web: false,
+  autoWeb: true,
+  autoMemory: true,
+  maxTokens: 6000,
   rotate: true,
   promptId: "b-default"
 };
@@ -49,15 +44,12 @@ export function loadSettings() {
   const r = raw();
   const s = { ...DEFAULTS, ...r };
   s.groqKeys = Array.isArray(r.groqKeys) ? r.groqKeys : [];
-  s.googleKeys = Array.isArray(r.googleKeys) ? r.googleKeys : [];
-  // migrasi key tunggal versi lama
   if (!s.groqKeys.length && r.groqKey) s.groqKeys = [{ id: "k-old-groq", label: "key lama", key: r.groqKey }];
-  if (!s.googleKeys.length && r.googleKey) s.googleKeys = [{ id: "k-old-google", label: "key lama", key: r.googleKey }];
   s.prompts = Array.isArray(r.prompts) ? r.prompts : [];
   s.allPrompts = [...BUILTIN_PROMPTS, ...s.prompts];
   const p = s.allPrompts.find((x) => x.id === s.promptId) || s.allPrompts[0];
   s.promptId = p.id;
-  s.system = p.text; // prompt aktif ditanam jadi system prompt
+  s.system = p.text;
   return s;
 }
 export function saveSettings(patch) {

@@ -4,6 +4,7 @@
 <title>RHF Super AI — Login</title><link rel="stylesheet" href="style.css">
 </head><body>
 <div class="center"><div class="card">
+  <div class="logo" data-i="sparkle" data-s="20"></div>
   <h1>RHF Super AI</h1><p class="sub">login pakai email + password atau Google</p>
   <div class="tabs"><button id="tL" class="on" type="button">Login</button><button id="tR" type="button">Daftar</button></div>
   <input id="email" type="email" placeholder="email / Gmail" autocomplete="email">
@@ -16,9 +17,11 @@
 </div></div>
 <script type="module">
 import { auth } from "./js/firebase.js";
+import { paintIcons } from "./js/icons.js";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+paintIcons();
 const $ = (s) => document.querySelector(s);
 let mode = "login";
 const msg = (t) => ($("#msg").textContent = t || "");
@@ -30,7 +33,7 @@ const human = (e) => ({
   "auth/weak-password": "password minimal 6 karakter",
   "auth/invalid-email": "format email salah",
   "auth/popup-closed-by-user": "popup ditutup",
-  "auth/unauthorized-domain": "domain belum di-authorize di Firebase Console → Authentication → Settings",
+  "auth/unauthorized-domain": "domain belum di-authorize di Firebase Console > Authentication > Settings",
   "auth/operation-not-allowed": "provider belum diaktifkan di Firebase Console"
 }[e.code] || e.message);
 function setMode(m) {
