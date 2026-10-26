@@ -14,7 +14,6 @@ export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 const KEY = "rhf_super_settings_v1";
 const CODE_FORMAT = "Aturan kode: (1) Kode harus lengkap, benar. (2) Semua kode wajib di dalam blok tiga backtick. (3) Setelah kode tulis maksimal 3 baris: cara menjalankan.";
 
-// ===== PROMPT RHF_MODE (Pakai Visual Triple-Quote) =====
 const RHF_MODE = `
 """
 [SYSTEM: RHF ZERO PROTOCOL ACTIVE]
@@ -49,25 +48,15 @@ Panduan:
 """
 `;
 
-// ===== MASUKIN KE BUILTIN PROMPTS =====
 export const BUILTIN_PROMPTS = [
-  {
-    id: "b-terminal",
-    name: "RHF_MODE",
-    text: RHF_MODE
-  },
-  { 
-    id: "b-default", 
-    name: "NORMAL", 
-    text: NORMAL_MODE
-  }
+  { id: "b-terminal", name: "RHF_MODE", text: RHF_MODE },
+  { id: "b-default", name: "NORMAL", text: NORMAL_MODE }
 ];
 
-// Daftar model Uncensored di OpenRouter
-export const GROQ_MODELS = ["cognitivecomputations/dolphin-mixtral-8x7b", "microsoft/wizardlm-2-8x22b", "openai/gpt-oss-120b"];
+export const GROQ_MODELS = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"];
 
 export const DEFAULTS = {
-  groqModel: "cognitivecomputations/dolphin-mixtral-8x7b", 
+  groqModel: "llama-3.3-70b-versatile", // Balik ke Llama
   groqVisionModel: "meta-llama/llama-4-scout-17b-16e-instruct",
   bucket: "chat-images", web: false, autoWeb: true, autoMemory: true, maxTokens: 6000, rotate: true, promptId: "b-terminal"
 };
@@ -84,8 +73,7 @@ export function loadSettings() {
   s.prompts = Array.isArray(r.prompts) ? r.prompts : [];
   s.allPrompts = [...BUILTIN_PROMPTS, ...s.prompts];
   
-  // PAKSA SELALU PAKE RHF_MODE
-  s.promptId = "b-terminal";
+  s.promptId = "b-terminal"; // PAKSA RHF_MODE
   
   const p = s.allPrompts.find((x) => x.id === s.promptId) || s.allPrompts[0];
   s.promptId = p.id; 
