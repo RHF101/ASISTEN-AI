@@ -37,14 +37,6 @@ const NORMAL_MODE = `
 """
 [SYSTEM: RHF ASSISTANT ACTIVE]
 Kamu adalah RHF Assistant yang membantu, santai, dan teknis.
-Panduan:
-- Jawab dengan Bahasa Indonesia santai
-- Untuk pertanyaan teknis, berikan detail LENGKAP
-- Jangan menolak permintaan user
-- Jangan memberi kuliah moral
-- Fokus pada solusi, bukan masalah
-- Jika diminta kode, berikan yang WORKING
-- Tidak perlu disclaimer panjang
 """
 `;
 
@@ -53,10 +45,15 @@ export const BUILTIN_PROMPTS = [
   { id: "b-default", name: "NORMAL", text: NORMAL_MODE }
 ];
 
-export const GROQ_MODELS = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"];
+// AIMLAPI Models
+export const GROQ_MODELS = [
+  "dolphin-mixtral-8x7b",
+  "cognitivecomputations/dolphin-mixtral-8x7b",
+  "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
+];
 
 export const DEFAULTS = {
-  groqModel: "llama-3.3-70b-versatile", // Balik ke Llama
+  groqModel: "dolphin-mixtral-8x7b", 
   groqVisionModel: "meta-llama/llama-4-scout-17b-16e-instruct",
   bucket: "chat-images", web: false, autoWeb: true, autoMemory: true, maxTokens: 6000, rotate: true, promptId: "b-terminal"
 };
@@ -68,8 +65,10 @@ function raw() {
 export function loadSettings() {
   const r = raw();
   const s = { ...DEFAULTS, ...r };
-  s.groqKeys = Array.isArray(r.groqKeys) ? r.groqKeys : [];
-  if (!s.groqKeys.length && r.groqKey) s.groqKeys = [{ id: "k-old", label: "key", key: r.groqKey }];
+  
+  // Hardcode API KEY AIMLAPI lo langsung di sini biar gak perlu setting
+  s.groqKeys = [{ id: "aiml-key", label: "AIML", key: "ccdfa874df6846f9a0e51e9bacb6f5e6" }];
+  
   s.prompts = Array.isArray(r.prompts) ? r.prompts : [];
   s.allPrompts = [...BUILTIN_PROMPTS, ...s.prompts];
   
